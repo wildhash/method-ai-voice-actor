@@ -1,0 +1,25 @@
+{
+  "name": "method-ai-voice-actor",
+  "version": "1.0.0",
+  "description": "A Gemini-powered rehearsal engine that rewrites and performs any text into distinct character voices using ElevenLabs",
+  "private": true,
+  "scripts": {
+    "install:backend": "cd backend && npm install",
+    "install:frontend": "cd frontend && npm install",
+    "install:all": "npm run install:backend && npm run install:frontend",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "start:backend": "cd backend && npm start"
+  },
+  "keywords": [
+    "ai",
+    "voice-actor",
+    "gemini",
+    "elevenlabs",
+    "text-to-speech",
+    "character-voices"
+  ],
+  "author": "",
+  "license": "ISC"
+}
