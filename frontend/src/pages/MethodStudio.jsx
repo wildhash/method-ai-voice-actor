@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PERSONAS, getPersonasArray } from '../personas';
 import api from '../services/api';
 import './MethodStudio.css';
@@ -13,6 +13,15 @@ function MethodStudio() {
 
   const personas = getPersonasArray();
   const currentPersona = PERSONAS[selectedPersona];
+
+  // Cleanup audio URL on unmount or when new audio is generated
+  useEffect(() => {
+    return () => {
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+      }
+    };
+  }, [audioUrl]);
 
   // The REHEARSE button handler
   const handleRehearsal = async () => {
@@ -45,6 +54,11 @@ function MethodStudio() {
   // Synthesize speech using ElevenLabs
   const synthesizeSpeech = async (text) => {
     try {
+      // Revoke previous audio URL to prevent memory leaks
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+      }
+
       const response = await api.post('/voice/synthesize', {
         text,
         voiceId: currentPersona.elevenLabsVoiceId
