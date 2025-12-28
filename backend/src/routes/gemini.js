@@ -1,7 +1,29 @@
 import express from 'express';
-import { rewriteText, generateCharacterDialogue } from '../services/geminiService.js';
+import { rewriteText, rewriteTextAsMethodActor, generateCharacterDialogue } from '../services/geminiService.js';
 
 const router = express.Router();
+
+// Method Actor endpoint - The core "perform" functionality
+router.post('/perform', async (req, res) => {
+  try {
+    const { text, personaKey } = req.body;
+    
+    if (!text || !personaKey) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: text and personaKey' 
+      });
+    }
+    
+    // personaKey should be the full persona description
+    const script = await rewriteTextAsMethodActor(text, personaKey);
+    res.json({ script });
+  } catch (error) {
+    res.status(500).json({ 
+      error: 'Failed to perform text',
+      message: error.message 
+    });
+  }
+});
 
 router.post('/rewrite', async (req, res) => {
   try {

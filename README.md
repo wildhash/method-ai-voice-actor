@@ -1,19 +1,28 @@
 # Method-AI Voice Actor
 
-A Gemini-powered rehearsal engine that rewrites and performs any text into distinct character voices using ElevenLabs, hosted on Google Cloud.
+A Vertex AI-powered rehearsal engine that transforms dry text into vivid character performances using Google Cloud and ElevenLabs.
+
+## 🎭 The Method AI Experience
+
+**Method AI** is a "Rehearsal Engine" that takes dry text (documentation, scripts, manuals) and performs them in specific character personas. It uses:
+- **Google Vertex AI (Gemini 1.5 Pro)** for intelligent script rewriting with method acting techniques
+- **ElevenLabs** for premium voice synthesis and vocal performance
+- **Google Cloud Run** for scalable deployment
 
 ## Features
 
-- 🎭 **Character Rewriting**: Use Google's Gemini AI to rewrite text in different character voices and styles
-- 🗣️ **Voice Synthesis**: Convert text to speech with ElevenLabs' premium voice library
-- 🎬 **Dialogue Generation**: Generate authentic character dialogue for any scenario
-- 🌐 **Modern Web Interface**: Built with React and Node.js for a seamless experience
+- 🎭 **Method Actor Rewriting**: Transforms text into character-specific performances while maintaining factual accuracy
+- 🎬 **Three Personas**: Noir Detective, SoCal Surfer, and 1920s News Anchor (easily extensible)
+- 🗣️ **Voice Synthesis**: High-quality text-to-speech with ElevenLabs premium voices
+- 🎨 **Three-Column Studio**: Intuitive interface - Script, Director's Chair, and Performance
+- 🌐 **Modern Web Stack**: React frontend with Node.js/Express backend
+- ☁️ **Cloud-Ready**: Designed for Google Cloud Run deployment
 
 ## Tech Stack
 
 ### Backend
 - Node.js with Express
-- Google Gemini AI API
+- **Google Vertex AI** with Gemini 1.5 Pro model
 - ElevenLabs Text-to-Speech API
 - CORS and environment variable support
 
@@ -21,7 +30,8 @@ A Gemini-powered rehearsal engine that rewrites and performs any text into disti
 - React with Vite
 - React Router for navigation
 - Axios for API calls
-- Modern CSS with responsive design
+- ElevenLabs React SDK
+- Modern CSS with responsive three-column layout
 
 ## Project Structure
 
@@ -54,8 +64,8 @@ method-ai-voice-actor/
 
 - Node.js (v18 or higher)
 - npm or yarn
-- Google Cloud account with Gemini API access
-- ElevenLabs API account
+- **Google Cloud account** with Vertex AI API enabled
+- **ElevenLabs API account**
 
 ### Installation
 
@@ -72,14 +82,32 @@ method-ai-voice-actor/
    cp .env.example .env
    ```
 
-   Edit `.env` and add your API keys:
+   Edit `.env` and add your configuration:
    ```env
    PORT=3001
-   GEMINI_API_KEY=your_gemini_api_key_here
+   
+   # For Vertex AI (Method AI)
+   GCP_PROJECT_ID=your_gcp_project_id
+   GCP_REGION=us-central1
+   
+   # For ElevenLabs
    ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
+   
+   # Legacy Gemini API (for Classic Studio)
+   GEMINI_API_KEY=your_gemini_api_key_here
    ```
 
-3. **Set up the frontend**
+3. **Authenticate with Google Cloud (for Vertex AI)**
+   ```bash
+   # Install gcloud CLI if not already installed
+   # Then authenticate:
+   gcloud auth application-default login
+   
+   # Set your project
+   gcloud config set project YOUR_PROJECT_ID
+   ```
+
+4. **Set up the frontend**
    ```bash
    cd ../frontend
    npm install
@@ -117,7 +145,22 @@ method-ai-voice-actor/
 #### Health Check
 - `GET /api/health` - Check if the server is running
 
-#### Gemini AI
+#### Method AI (The Director)
+- `POST /api/gemini/perform` - Transform text using Method Actor technique
+  ```json
+  {
+    "text": "Your raw text here",
+    "personaKey": "Full persona description including character traits, speech patterns, etc."
+  }
+  ```
+  Returns:
+  ```json
+  {
+    "script": "The rewritten text in character"
+  }
+  ```
+
+#### Gemini AI (Classic Studio)
 - `POST /api/gemini/rewrite` - Rewrite text in character voice
   ```json
   {
@@ -148,16 +191,52 @@ method-ai-voice-actor/
 
 ## Usage
 
-1. **Navigate to the Home Page**: See an overview of features
-2. **Go to Studio**: Start creating character voices
-3. **Choose a Mode**:
+### Method AI Studio (The Main Feature)
+
+1. **Navigate to Method Studio** at http://localhost:5173/method
+2. **The Three-Column Interface**:
+   - **Left: The Script** - Paste your raw text (documentation, scripts, manuals)
+   - **Center: The Director's Chair** - Select your persona and hit REHEARSE
+   - **Right: The Performance** - View the rewritten text and play the audio
+3. **Choose a Persona**:
+   - **Gritty Noir Detective** - Cynical 1940s private eye
+   - **SoCal Surfer** - Laid-back, enthusiastic beach dude
+   - **1920s Transatlantic News Anchor** - Fast-talking, high-energy reporter
+4. **Click REHEARSE**: The system will rewrite your text in character and generate audio
+5. **Listen and Download**: Play the generated audio performance
+
+### Classic Studio
+
+1. **Navigate to Classic Studio** at http://localhost:5173/studio
+2. **Choose a Mode**:
    - **Rewrite Text**: Transform existing text into a character voice
    - **Generate Dialogue**: Create new character dialogue from scratch
-4. **Generate Content**: Use AI to create character-specific text
-5. **Synthesize Speech**: Convert the text to audio with a selected voice
-6. **Listen and Download**: Play the generated audio
+3. **Generate Content**: Use AI to create character-specific text
+4. **Synthesize Speech**: Convert the text to audio with a selected voice
+5. **Listen and Download**: Play the generated audio
 
 ## Development
+
+### Adding New Personas
+
+Personas are defined in `frontend/src/personas.js`. To add a new persona:
+
+```javascript
+export const PERSONAS = {
+  // ... existing personas
+  
+  your_persona_key: {
+    label: "Display Name for Your Persona",
+    systemPrompt: "Detailed character description including speech patterns, vocabulary, tone, and any character-specific traits...",
+    elevenLabsVoiceId: "voice_id_from_elevenlabs"
+  }
+};
+```
+
+**Finding ElevenLabs Voice IDs:**
+1. Visit [ElevenLabs Voice Library](https://elevenlabs.io/voice-library)
+2. Choose a voice that matches your persona
+3. Copy the voice ID from the voice details
 
 ### Backend Development
 ```bash
@@ -188,7 +267,36 @@ npm run preview  # Preview production build
 
 ## Deployment to Google Cloud
 
-(To be added: Instructions for deploying to Google Cloud Platform)
+### Deploying to Cloud Run
+
+1. **Enable Required APIs**
+   ```bash
+   gcloud services enable run.googleapis.com
+   gcloud services enable aiplatform.googleapis.com
+   ```
+
+2. **Deploy Backend**
+   ```bash
+   cd backend
+   gcloud run deploy method-ai-backend \
+     --source . \
+     --region us-central1 \
+     --allow-unauthenticated \
+     --set-env-vars GCP_PROJECT_ID=YOUR_PROJECT_ID,GCP_REGION=us-central1,ELEVENLABS_API_KEY=YOUR_KEY
+   ```
+
+3. **Deploy Frontend**
+   ```bash
+   cd frontend
+   npm run build
+   gcloud run deploy method-ai-frontend \
+     --source . \
+     --region us-central1 \
+     --allow-unauthenticated \
+     --set-env-vars VITE_API_BASE_URL=https://your-backend-url/api
+   ```
+
+For detailed Cloud Run deployment instructions, see [Google Cloud Run Documentation](https://cloud.google.com/run/docs/quickstarts/build-and-deploy).
 
 ## API Keys
 
