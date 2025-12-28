@@ -21,11 +21,25 @@ const initializeVertexAI = () => {
   return new VertexAI({ project: projectId, location: location });
 };
 
-export const getVertexAIModel = (modelName = 'gemini-1.5-pro') => {
+export const getVertexAIModel = (modelName = 'gemini-3.0-flash', generationConfig = null) => {
   if (!vertexAI) {
     vertexAI = initializeVertexAI();
   }
-  return vertexAI.getGenerativeModel({ model: modelName });
+  
+  const modelConfig = { model: modelName };
+  
+  // Add generation config if provided, otherwise use defaults for gemini-3.0-flash
+  if (generationConfig) {
+    modelConfig.generationConfig = generationConfig;
+  } else if (modelName === 'gemini-3.0-flash' || modelName === 'gemini-3.0-pro') {
+    modelConfig.generationConfig = {
+      maxOutputTokens: 2048,
+      temperature: 0.9, // High temp = better "creative acting"
+      topP: 0.95,
+    };
+  }
+  
+  return vertexAI.getGenerativeModel(modelConfig);
 };
 
 // Legacy export for backward compatibility

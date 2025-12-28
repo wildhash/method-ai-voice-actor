@@ -5,13 +5,15 @@ A Vertex AI-powered rehearsal engine that transforms dry text into vivid charact
 ## 🎭 The Method AI Experience
 
 **Method AI** is a "Rehearsal Engine" that takes dry text (documentation, scripts, manuals) and performs them in specific character personas. It uses:
-- **Google Vertex AI (Gemini 1.5 Pro)** for intelligent script rewriting with method acting techniques
+- **Google Vertex AI (Gemini 3.0 Flash)** for fast, intelligent script rewriting with method acting techniques (with optional Gemini 3.0 Pro for "Deep Rehearsal" mode)
 - **ElevenLabs** for premium voice synthesis and vocal performance
 - **Google Cloud Run** for scalable deployment
 
 ## Features
 
 - 🎭 **Method Actor Rewriting**: Transforms text into character-specific performances while maintaining factual accuracy
+- ⚡ **Gemini 3.0 Flash**: Optimized for speed with frontier intelligence for real-time conversational feel
+- 🧠 **Deep Rehearsal Mode**: Optional Gemini 3.0 Pro mode for highly analytical script breakdowns
 - 🎬 **Three Personas**: Noir Detective, SoCal Surfer, and 1920s News Anchor (easily extensible)
 - 🗣️ **Voice Synthesis**: High-quality text-to-speech with ElevenLabs premium voices
 - 🎨 **Three-Column Studio**: Intuitive interface - Script, Director's Chair, and Performance
@@ -22,7 +24,7 @@ A Vertex AI-powered rehearsal engine that transforms dry text into vivid charact
 
 ### Backend
 - Node.js with Express
-- **Google Vertex AI** with Gemini 1.5 Pro model
+- **Google Vertex AI** with Gemini 3.0 Flash (default) and Gemini 3.0 Pro (Deep Rehearsal mode)
 - ElevenLabs Text-to-Speech API
 - CORS and environment variable support
 
@@ -202,8 +204,9 @@ method-ai-voice-actor/
    - **Gritty Noir Detective** - Cynical 1940s private eye
    - **SoCal Surfer** - Laid-back, enthusiastic beach dude
    - **1920s Transatlantic News Anchor** - Fast-talking, high-energy reporter
-4. **Click REHEARSE**: The system will rewrite your text in character and generate audio
-5. **Listen and Download**: Play the generated audio performance
+4. **Toggle Deep Rehearsal** (optional): Enable for more analytical script breakdown using Gemini 3.0 Pro (slower but more sophisticated)
+5. **Click REHEARSE**: The system will rewrite your text in character using Gemini 3.0 Flash (or Pro if Deep Rehearsal is enabled) and generate audio
+6. **Listen and Download**: Play the generated audio performance
 
 ### Classic Studio
 
