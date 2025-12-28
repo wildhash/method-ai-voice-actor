@@ -23,8 +23,8 @@ function MethodStudio() {
     setAudioUrl(null);
 
     try {
-      // Call the /api/perform endpoint
-      const response = await api.post('/perform', {
+      // Call the /api/gemini/perform endpoint
+      const response = await api.post('/gemini/perform', {
         text: inputText,
         personaKey: currentPersona.systemPrompt
       });
