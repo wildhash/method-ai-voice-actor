@@ -8,6 +8,7 @@ function MethodStudio() {
   const [inputText, setInputText] = useState('');
   const [script, setScript] = useState('');
   const [selectedPersona, setSelectedPersona] = useState('noir_detective');
+  const [deepRehearsal, setDeepRehearsal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null);
 
@@ -35,7 +36,8 @@ function MethodStudio() {
       // Call the /api/gemini/perform endpoint
       const response = await api.post('/gemini/perform', {
         text: inputText,
-        personaKey: currentPersona.systemPrompt
+        personaKey: currentPersona.systemPrompt,
+        deepRehearsal: deepRehearsal
       });
 
       const generatedScript = response.data.script;
@@ -125,6 +127,25 @@ function MethodStudio() {
                 <h3>Character Description:</h3>
                 <p className="persona-description">
                   {currentPersona.systemPrompt}
+                </p>
+              </div>
+
+              <div className="deep-rehearsal-toggle">
+                <label className="toggle-container">
+                  <input
+                    type="checkbox"
+                    checked={deepRehearsal}
+                    onChange={(e) => setDeepRehearsal(e.target.checked)}
+                  />
+                  <span className="toggle-label">
+                    🧠 Deep Rehearsal Mode
+                  </span>
+                </label>
+                <p className="toggle-description">
+                  {deepRehearsal 
+                    ? "Using Gemini 3.0 Pro for highly analytical breakdown (slower but smarter)"
+                    : "Using Gemini 3.0 Flash for fast performance (optimized for speed)"
+                  }
                 </p>
               </div>
 

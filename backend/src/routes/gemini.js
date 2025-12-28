@@ -6,7 +6,7 @@ const router = express.Router();
 // Method Actor endpoint - The core "perform" functionality
 router.post('/perform', async (req, res) => {
   try {
-    const { text, personaKey } = req.body;
+    const { text, personaKey, deepRehearsal } = req.body;
     
     if (!text || !personaKey) {
       return res.status(400).json({ 
@@ -14,8 +14,11 @@ router.post('/perform', async (req, res) => {
       });
     }
     
+    // Determine which model to use based on deepRehearsal flag
+    const modelName = deepRehearsal ? 'gemini-3.0-pro' : 'gemini-3.0-flash';
+    
     // personaKey should be the full persona description
-    const script = await rewriteTextAsMethodActor(text, personaKey);
+    const script = await rewriteTextAsMethodActor(text, personaKey, modelName);
     res.json({ script });
   } catch (error) {
     res.status(500).json({ 
