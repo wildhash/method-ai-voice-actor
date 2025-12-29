@@ -134,33 +134,79 @@ function MethodStudio({ onOpenSettings }) {
     const chars = new Set();
     let currentCharacter = null;
     
+    // Patterns that indicate scene directions, NOT character names
+    const directionPatterns = [
+      /^(INT\.|EXT\.|INTERIOR|EXTERIOR)/i,  // Scene headings
+      /^(FADE|CUT|DISSOLVE|SMASH)/i,        // Transitions
+      /^(CONTINUED|CONT'D|MORE)/i,          // Continuations
+      /^(THE END|END OF|TITLE:)/i,          // Endings/titles
+      /^\(.*\)$/,                            // Parentheticals
+      /^[A-Z\s]+[-–—]\s*(DAY|NIGHT|MORNING|EVENING|LATER|CONTINUOUS)/i, // Scene headings
+      /^\*.*\*$/,                            // Asterisk-wrapped directions
+      /^---+$/,                              // Dividers
+    ];
+    
+    const isDirection = (line) => {
+      return directionPatterns.some(pattern => pattern.test(line));
+    };
+    
+    // Check if line looks like a character name (for screenplay format)
+    const isCharacterName = (line) => {
+      // Must be all caps, relatively short, no periods, not a known direction
+      return /^[A-Z][A-Z0-9\s'_-]{0,20}$/.test(line) && 
+             !line.includes('.') && 
+             !isDirection(line) &&
+             line.split(' ').length <= 3;
+    };
+    
     lines.forEach((line) => {
       const trimmed = line.trim();
       if (!trimmed) return;
 
-      const simpleMatch = trimmed.match(/^([A-Z][A-Z0-9\s_-]*?):\s*(.+)$/);
+      // Check for explicit directions first
+      if (isDirection(trimmed)) {
+        parsed.push({ type: 'direction', text: trimmed, original: line });
+        currentCharacter = null;
+        return;
+      }
+
+      // Primary format: CHARACTER: Dialogue text (preferred)
+      const simpleMatch = trimmed.match(/^([A-Z][A-Z0-9\s'_-]{0,20}):\s*(.+)$/);
       
       if (simpleMatch) {
         const char = simpleMatch[1].trim();
         const dialogueText = simpleMatch[2].trim();
-        chars.add(char);
-        parsed.push({ type: 'dialogue', character: char, text: dialogueText, original: line });
-        currentCharacter = null;
-      } 
-      else if (/^[A-Z][A-Z0-9\s()]*$/.test(trimmed) && trimmed.length < 30) {
-        currentCharacter = trimmed.replace(/\s*\(.*?\)\s*/g, '').trim();
-        chars.add(currentCharacter);
-      }
-      else if (currentCharacter) {
-        if (trimmed.startsWith('(') && trimmed.endsWith(')')) {
-           parsed.push({ type: 'direction', text: trimmed, original: line });
-        } else {
-           parsed.push({ type: 'dialogue', character: currentCharacter, text: trimmed, original: line });
+        
+        // Make sure it's not a time indicator like "LATER:" or "MEANWHILE:"
+        const timeIndicators = ['LATER', 'MEANWHILE', 'EARLIER', 'MOMENTS', 'CONTINUOUS', 'SAME'];
+        if (!timeIndicators.includes(char)) {
+          chars.add(char);
+          parsed.push({ type: 'dialogue', character: char, text: dialogueText, original: line });
+          currentCharacter = null;
+          return;
         }
       }
-      else {
-        parsed.push({ type: 'direction', text: trimmed, original: line });
+      
+      // Screenplay format: Character name on its own line
+      if (isCharacterName(trimmed)) {
+        currentCharacter = trimmed.replace(/\s*\(.*?\)\s*/g, '').trim();
+        chars.add(currentCharacter);
+        return;
       }
+      
+      // If we have a current character, this is their dialogue
+      if (currentCharacter) {
+        if (trimmed.startsWith('(') && trimmed.endsWith(')')) {
+          // Parenthetical direction - skip it for voice
+          parsed.push({ type: 'direction', text: trimmed, original: line });
+        } else {
+          parsed.push({ type: 'dialogue', character: currentCharacter, text: trimmed, original: line });
+        }
+        return;
+      }
+      
+      // Anything else is a direction
+      parsed.push({ type: 'direction', text: trimmed, original: line });
     });
 
     return { lines: parsed, chars: Array.from(chars) };

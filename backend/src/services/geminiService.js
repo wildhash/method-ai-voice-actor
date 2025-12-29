@@ -2,33 +2,23 @@ import { getVertexAIModel } from '../config/gemini.js';
 
 /**
  * Method Actor rewrite function - rewrites text in a specific persona
- * @param {string} text - The original text to rewrite
- * @param {string} persona - The persona description
- * @param {string} modelName - Optional model name (default: gemini-3.0-flash)
- * @returns {Promise<string>} The rewritten text in character
  */
 export const rewriteTextAsMethodActor = async (text, persona, modelName = 'gemini-flash-latest') => {
   try {
     const model = getVertexAIModel(modelName);
     
-    // Sanitize inputs to prevent prompt injection
     const sanitizedText = text.trim();
     const sanitizedPersona = persona.trim();
     
-    if (!sanitizedText) {
-      throw new Error('Text cannot be empty');
-    }
+    if (!sanitizedText) throw new Error('Text cannot be empty');
+    if (!sanitizedPersona) throw new Error('Persona description cannot be empty');
     
-    if (!sanitizedPersona) {
-      throw new Error('Persona description cannot be empty');
-    }
-    
-    const systemInstruction = `You are a master method actor. Your goal is to rewrite the provided text effectively into the voice of a specific Persona.
+    const systemInstruction = `You are a master method actor. Rewrite the provided text in the voice of a specific Persona.
 Persona: ${sanitizedPersona}
 Rules:
 1. Keep the core information and facts accurate.
 2. Change the vocabulary, sentence structure, and tone to match the persona perfectly.
-3. Do not add 'Here is the rewritten text' preamble. Just start acting.`;
+3. Do not add preamble. Just start acting.`;
     
     const prompt = `${systemInstruction}\n\nText to rewrite:\n${sanitizedText}`;
     
@@ -43,10 +33,6 @@ Rules:
 
 /**
  * Chat with a persona - interactive scene rehearsal
- * @param {string} userMessage - The user's line
- * @param {string} persona - The persona description
- * @param {Array} history - Previous messages in the conversation
- * @returns {Promise<string>} The persona's response
  */
 export const chatWithPersona = async (userMessage, persona, history = []) => {
   try {
@@ -55,15 +41,13 @@ export const chatWithPersona = async (userMessage, persona, history = []) => {
     const systemInstruction = `You are a method actor staying completely in character.
 Your Character: ${persona}
 
-Context: You are in a scene with another actor (the user).
 Rules:
 1. Respond naturally to the user's line as your character.
 2. Stay 100% in character. Never break character.
-3. Keep responses concise (1-3 sentences) unless a monologue is required.
+3. Keep responses concise (1-3 sentences).
 4. React emotionally to what the user says.
-5. Do not include stage directions like *looks angry* unless absolutely necessary for the voice performance.`;
+5. No stage directions or asterisks.`;
 
-    // Construct the chat history for the prompt
     let prompt = `${systemInstruction}\n\nScene History:\n`;
     
     history.forEach(msg => {
@@ -116,24 +100,41 @@ Generate a natural, in-character response as ${characterName}.`;
 };
 
 /**
- * Generate a screenplay scene based on a prompt
- * @param {string} prompt - The scene description
- * @returns {Promise<string>} The generated script
+ * Generate a dialogue scene based on a prompt
+ * Optimized for voice rehearsal - uses simple CHARACTER: dialogue format
  */
 export const generateScript = async (prompt) => {
   try {
     const model = getVertexAIModel('gemini-flash-latest');
     
-    const systemInstruction = `You are an expert screenwriter. Write a scene based on the user's prompt.
-Format: Standard Screenplay Format.
-1. Start with a Scene Heading (e.g., INT. COFFEE SHOP - DAY).
-2. Use character names in ALL CAPS centered above dialogue.
-3. Include parentheticals for delivery instructions if needed.
-4. Keep it under 3 pages.
-5. Ensure distinct voices for characters.
-6. Output ONLY the script content, no markdown code blocks or explanations.`;
+    const systemInstruction = `You are an expert dialogue writer for voice acting rehearsals.
 
-    const fullPrompt = `${systemInstruction}\n\nPrompt: ${prompt}`;
+CRITICAL FORMAT RULES:
+1. Use ONLY this format: CHARACTER: Their dialogue here
+2. Character names must be a single word in ALL CAPS followed by a colon
+3. NO scene headings (no INT./EXT.)
+4. NO parentheticals or stage directions
+5. NO action lines or descriptions
+6. ONLY dialogue lines, nothing else
+7. Each line should be speakable (2-4 sentences max)
+8. Create 2-4 distinct characters with unique voices
+9. Write 8-15 lines of dialogue total
+
+GOOD EXAMPLE:
+MARCUS: I've been waiting for you. Did you think you could hide forever?
+ELENA: I wasn't hiding. I was preparing.
+MARCUS: Preparing for what exactly?
+ELENA: For this moment. The moment I finally tell you the truth.
+
+BAD EXAMPLE (DO NOT DO THIS):
+INT. WAREHOUSE - NIGHT
+MARCUS (angrily)
+I've been waiting for you.
+(He steps forward)
+
+Output ONLY the dialogue lines. No explanations, no markdown, no scene descriptions.`;
+
+    const fullPrompt = `${systemInstruction}\n\nWrite a dialogue scene about: ${prompt}`;
     
     const result = await model.generateContent(fullPrompt);
     const response = await result.response;
@@ -143,4 +144,3 @@ Format: Standard Screenplay Format.
     throw error;
   }
 };
-
