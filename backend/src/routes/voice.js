@@ -1,20 +1,67 @@
 import express from 'express';
 import { Readable } from 'stream';
 import { textToSpeech, getAvailableVoices } from '../services/voiceService.js';
+import { checkRateLimit, getRateLimitStatus, TIER_LIMITS } from '../services/rateLimitService.js';
 
 const router = express.Router();
+
+// Affiliate link for ElevenLabs
+const ELEVENLABS_AFFILIATE_LINK = 'https://try.elevenlabs.io/ynnoa7cat7j9';
+
+// Get rate limit status and affiliate info
+router.get('/status', (req, res) => {
+  const clientId = req.headers['x-client-id'] || req.ip;
+  const apiKey = req.headers['x-elevenlabs-key'];
+  
+  const status = getRateLimitStatus(clientId, !!apiKey);
+  
+  res.json({
+    ...status,
+    affiliateLink: ELEVENLABS_AFFILIATE_LINK,
+    message: status.tier === 'free' 
+      ? `You have ${status.remaining} free requests left today. Get unlimited access with your own API key!`
+      : 'Using your own API key - unlimited requests!'
+  });
+});
 
 router.post('/synthesize', async (req, res) => {
   try {
     const { text, voiceId } = req.body;
+    const clientId = req.headers['x-client-id'] || req.ip;
+    const userApiKey = req.headers['x-elevenlabs-key'];
     
     if (!text) {
       return res.status(400).json({ 
         error: 'Missing required field: text' 
       });
     }
+
+    // Check rate limit for free tier users
+    if (!userApiKey) {
+      const { allowed, remaining, resetTime } = checkRateLimit(clientId);
+      
+      if (!allowed) {
+        return res.status(429).json({
+          error: 'Rate limit exceeded',
+          message: `Free tier limit reached. Get your own ElevenLabs API key for unlimited access!`,
+          affiliateLink: ELEVENLABS_AFFILIATE_LINK,
+          resetTime,
+          upgradeMessage: 'Sign up through our link to support the project!'
+        });
+      }
+      
+      // Add rate limit headers
+      res.set({
+        'X-RateLimit-Remaining': remaining.toString(),
+        'X-RateLimit-Reset': resetTime.toString(),
+        'X-RateLimit-Tier': 'free'
+      });
+    } else {
+      res.set({ 'X-RateLimit-Tier': 'unlimited' });
+    }
     
-    const audio = await textToSpeech(text, voiceId);
+    // Use user's API key if provided, otherwise use ours
+    const audio = await textToSpeech(text, voiceId, userApiKey);
     
     // Set appropriate headers for audio stream
     res.set({
@@ -24,21 +71,17 @@ router.post('/synthesize', async (req, res) => {
     
     // Handle different audio response formats from ElevenLabs SDK
     if (audio.pipe && typeof audio.pipe === 'function') {
-      // Node.js stream
       audio.pipe(res);
     } else if (audio instanceof Readable) {
       audio.pipe(res);
     } else if (audio[Symbol.asyncIterator]) {
-      // Async iterator (newer SDK versions)
       for await (const chunk of audio) {
         res.write(chunk);
       }
       res.end();
     } else if (Buffer.isBuffer(audio)) {
-      // Buffer
       res.send(audio);
     } else {
-      // Fallback - try to convert to buffer
       const chunks = [];
       for await (const chunk of audio) {
         chunks.push(chunk);
@@ -56,15 +99,14 @@ router.post('/synthesize', async (req, res) => {
 
 router.get('/voices', async (req, res) => {
   try {
-    const result = await getAvailableVoices();
-    // If result already has voices array (standard ElevenLabs response), return it directly
+    const userApiKey = req.headers['x-elevenlabs-key'];
+    const result = await getAvailableVoices(userApiKey);
+    
     if (result && result.voices && Array.isArray(result.voices)) {
       res.json(result);
     } else if (Array.isArray(result)) {
-      // If it returns just an array
       res.json({ voices: result });
     } else {
-      // Fallback or unexpected format
       console.warn('Unexpected voice format:', result);
       res.json({ voices: [] });
     }
@@ -74,6 +116,27 @@ router.get('/voices', async (req, res) => {
       message: error.message 
     });
   }
+});
+
+// Info endpoint about tiers
+router.get('/tiers', (req, res) => {
+  res.json({
+    tiers: {
+      free: {
+        name: 'Free Tier',
+        limit: TIER_LIMITS.FREE_DAILY_LIMIT,
+        period: 'daily',
+        description: 'Perfect for trying out Method AI'
+      },
+      unlimited: {
+        name: 'Bring Your Own Key',
+        limit: 'unlimited',
+        description: 'Use your own ElevenLabs API key for unlimited access'
+      }
+    },
+    affiliateLink: ELEVENLABS_AFFILIATE_LINK,
+    affiliateMessage: 'Sign up through our link to support Method AI development!'
+  });
 });
 
 export default router;

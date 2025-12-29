@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import PropTypes from 'prop-types';
 import { rewriteText, generateDialogue } from '../services/geminiService';
 import { synthesizeSpeech, getVoices } from '../services/voiceService';
+import RateLimitBanner from '../components/RateLimitBanner';
 import './Studio.css';
 
-function Studio() {
-  const [mode, setMode] = useState('rewrite'); // 'rewrite' or 'generate'
+function Studio({ onOpenSettings }) {
+  const [mode, setMode] = useState('rewrite');
   const [inputText, setInputText] = useState('');
   const [characterPrompt, setCharacterPrompt] = useState('');
   const [characterName, setCharacterName] = useState('');
@@ -15,15 +17,26 @@ function Studio() {
   const [selectedVoice, setSelectedVoice] = useState('');
   const [loading, setLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null);
+  const [rateLimitError, setRateLimitError] = useState(null);
+  
+  const audioUrlRef = useRef(null);
 
   useEffect(() => {
     loadVoices();
   }, []);
 
+  // Cleanup audio URL on unmount
+  useEffect(() => {
+    return () => {
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+    };
+  }, []);
+
   const loadVoices = async () => {
     try {
       const data = await getVoices();
-      // Handle different response structures
       let voicesList = [];
       if (data.voices && Array.isArray(data.voices)) {
         voicesList = data.voices;
@@ -75,13 +88,26 @@ function Studio() {
     if (!outputText || !selectedVoice) return;
 
     setLoading(true);
+    setRateLimitError(null);
+    
     try {
       const audioBlob = await synthesizeSpeech(outputText, selectedVoice);
+      
+      // Cleanup previous URL
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+      
       const url = URL.createObjectURL(audioBlob);
+      audioUrlRef.current = url;
       setAudioUrl(url);
     } catch (error) {
       console.error('Failed to synthesize speech:', error);
-      alert('Failed to synthesize speech. Please try again.');
+      if (error.isRateLimited) {
+        setRateLimitError(error);
+      } else {
+        alert('Failed to synthesize speech. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -91,6 +117,8 @@ function Studio() {
     <div className="studio">
       <div className="studio-container">
         <h1>Voice Actor Studio</h1>
+        
+        <RateLimitBanner error={rateLimitError} onOpenSettings={onOpenSettings} />
         
         <div className="mode-selector">
           <button
@@ -227,5 +255,9 @@ function Studio() {
     </div>
   );
 }
+
+Studio.propTypes = {
+  onOpenSettings: PropTypes.func
+};
 
 export default Studio;
