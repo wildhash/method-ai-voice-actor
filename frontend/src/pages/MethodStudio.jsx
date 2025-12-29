@@ -1,22 +1,25 @@
 import { useState, useEffect, useRef } from 'react';
+import PropTypes from 'prop-types';
 import { generateScript } from '../services/geminiService';
 import { getVoices, synthesizeSpeech } from '../services/voiceService';
 import useSpeechRecognition from '../hooks/useSpeechRecognition';
+import RateLimitBanner from '../components/RateLimitBanner';
 import './MethodStudio.css';
 
-function MethodStudio() {
+function MethodStudio({ onOpenSettings }) {
   // --- State ---
   const [stage, setStage] = useState('setup'); // 'setup', 'casting', 'rehearsal'
   const [script, setScript] = useState('');
   const [parsedLines, setParsedLines] = useState([]);
   const [characters, setCharacters] = useState([]);
-  const [assignments, setAssignments] = useState({}); // { "CHAR_NAME": { type: "user" | "ai", voiceId: "..." } }
+  const [assignments, setAssignments] = useState({});
   const [availableVoices, setAvailableVoices] = useState([]);
   
   // Rehearsal State
   const [currentLineIndex, setCurrentLineIndex] = useState(0);
   const [isRehearsing, setIsRehearsing] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [rateLimitError, setRateLimitError] = useState(null);
   
   // Generation State
   const [prompt, setPrompt] = useState('');
@@ -33,6 +36,7 @@ function MethodStudio() {
   } = useSpeechRecognition();
   
   const audioRef = useRef(null);
+  const audioUrlRef = useRef(null); // Track URL for cleanup
   const scriptEndRef = useRef(null);
 
   // --- Effects ---
@@ -55,30 +59,27 @@ function MethodStudio() {
   useEffect(() => {
     if (!isRehearsing || currentLineIndex >= parsedLines.length) {
       if (currentLineIndex >= parsedLines.length && isRehearsing) {
-        setIsRehearsing(false); // End of script
+        setIsRehearsing(false);
       }
       return;
     }
 
     const currentLine = parsedLines[currentLineIndex];
     
-    // Skip stage directions for now, or just auto-advance
     if (currentLine.type === 'direction') {
       const timer = setTimeout(() => {
         advanceLine();
-      }, 2000); // Give 2 seconds to read direction
+      }, 2000);
       return () => clearTimeout(timer);
     }
 
     const assignment = assignments[currentLine.character];
-    if (!assignment) return; // Should not happen if casting is done
+    if (!assignment) return;
 
     if (assignment.type === 'ai') {
-      // AI Turn
       stopListening();
       playLine(currentLine.text, assignment.voiceId);
     } else {
-      // User Turn
       if (isSpeechSupported) {
         resetTranscript();
         startListening();
@@ -96,6 +97,15 @@ function MethodStudio() {
       }
     }
   }, [currentLineIndex, isRehearsing]);
+
+  // Cleanup audio URLs on unmount
+  useEffect(() => {
+    return () => {
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+    };
+  }, []);
 
   // --- Logic ---
 
@@ -118,41 +128,32 @@ function MethodStudio() {
     const lines = text.split('\n');
     const parsed = [];
     const chars = new Set();
-    
-    // Regex for "CHARACTER: Dialogue" or just "CHARACTER" (centered-ish)
-    // We'll assume standard format: Character name in CAPS, followed by dialogue
-    
     let currentCharacter = null;
     
     lines.forEach((line) => {
       const trimmed = line.trim();
       if (!trimmed) return;
 
-      // Check for "CHARACTER: Dialogue" format (Simple)
       const simpleMatch = trimmed.match(/^([A-Z][A-Z0-9\s_-]*?):\s*(.+)$/);
       
       if (simpleMatch) {
         const char = simpleMatch[1].trim();
-        const text = simpleMatch[2].trim();
+        const dialogueText = simpleMatch[2].trim();
         chars.add(char);
-        parsed.push({ type: 'dialogue', character: char, text: text, original: line });
+        parsed.push({ type: 'dialogue', character: char, text: dialogueText, original: line });
         currentCharacter = null;
       } 
-      // Check for Character Name (All CAPS, usually short)
       else if (/^[A-Z][A-Z0-9\s()]*$/.test(trimmed) && trimmed.length < 30) {
-        currentCharacter = trimmed.replace(/\s*\(.*?\)\s*/g, '').trim(); // Remove parentheticals from name
+        currentCharacter = trimmed.replace(/\s*\(.*?\)\s*/g, '').trim();
         chars.add(currentCharacter);
       }
-      // If we have a current character, this is dialogue
       else if (currentCharacter) {
-        // Check for parenthetical
         if (trimmed.startsWith('(') && trimmed.endsWith(')')) {
            parsed.push({ type: 'direction', text: trimmed, original: line });
         } else {
            parsed.push({ type: 'dialogue', character: currentCharacter, text: trimmed, original: line });
         }
       }
-      // Otherwise, stage direction
       else {
         parsed.push({ type: 'direction', text: trimmed, original: line });
       }
@@ -189,11 +190,9 @@ function MethodStudio() {
     const voices = [...availableVoices];
     
     characters.forEach((char, index) => {
-      // Assign first character to User by default
       if (index === 0) {
         newAssignments[char] = { type: 'user', voiceId: null };
       } else {
-        // Assign random voice to others
         const randomVoice = voices[Math.floor(Math.random() * voices.length)];
         newAssignments[char] = { type: 'ai', voiceId: randomVoice?.voice_id };
       }
@@ -203,15 +202,23 @@ function MethodStudio() {
 
   const playLine = async (text, voiceId) => {
     if (!voiceId) {
-      // Fallback if no voice assigned
       setTimeout(advanceLine, 2000);
       return;
     }
     
     setIsPlayingAudio(true);
+    setRateLimitError(null);
+    
     try {
       const audioBlob = await synthesizeSpeech(text, voiceId);
+      
+      // Cleanup previous URL
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+      
       const url = URL.createObjectURL(audioBlob);
+      audioUrlRef.current = url;
       
       if (audioRef.current) {
         audioRef.current.src = url;
@@ -220,12 +227,23 @@ function MethodStudio() {
     } catch (err) {
       console.error('TTS Error:', err);
       setIsPlayingAudio(false);
-      advanceLine(); // Skip on error
+      
+      if (err.isRateLimited) {
+        setRateLimitError(err);
+        setIsRehearsing(false);
+      } else {
+        advanceLine();
+      }
     }
   };
 
   const handleAudioEnded = () => {
     setIsPlayingAudio(false);
+    // Cleanup URL after playback
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
     advanceLine();
   };
 
@@ -234,12 +252,12 @@ function MethodStudio() {
   };
 
   const startRehearsal = () => {
-    // Validate casting
     const unassigned = characters.filter(c => !assignments[c]);
     if (unassigned.length > 0) {
       alert(`Please assign roles for: ${unassigned.join(', ')}`);
       return;
     }
+    setRateLimitError(null);
     setStage('rehearsal');
     setCurrentLineIndex(0);
     setIsRehearsing(true);
@@ -255,7 +273,6 @@ function MethodStudio() {
         style={{ display: 'none' }} 
       />
 
-      {/* HEADER */}
       <header className="studio-header">
         <h1>Method Studio</h1>
         <div className="steps">
@@ -264,6 +281,8 @@ function MethodStudio() {
           <div className={`step ${stage === 'rehearsal' ? 'active' : ''}`}>3. Rehearsal</div>
         </div>
       </header>
+
+      <RateLimitBanner error={rateLimitError} onOpenSettings={onOpenSettings} />
 
       {/* STAGE 1: SETUP */}
       {stage === 'setup' && (
@@ -426,5 +445,9 @@ function MethodStudio() {
     </div>
   );
 }
+
+MethodStudio.propTypes = {
+  onOpenSettings: PropTypes.func
+};
 
 export default MethodStudio;
