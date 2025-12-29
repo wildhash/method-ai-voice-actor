@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { generateScript } from '../services/geminiService';
 import { getVoices, synthesizeSpeech } from '../services/voiceService';
@@ -6,9 +6,16 @@ import useSpeechRecognition from '../hooks/useSpeechRecognition';
 import RateLimitBanner from '../components/RateLimitBanner';
 import './MethodStudio.css';
 
+// localStorage keys
+const STORAGE_KEYS = {
+  SCRIPT: 'method-studio-script',
+  ASSIGNMENTS: 'method-studio-assignments',
+  PROMPT: 'method-studio-prompt'
+};
+
 function MethodStudio({ onOpenSettings }) {
   // --- State ---
-  const [stage, setStage] = useState('setup'); // 'setup', 'casting', 'rehearsal'
+  const [stage, setStage] = useState('setup');
   const [script, setScript] = useState('');
   const [parsedLines, setParsedLines] = useState([]);
   const [characters, setCharacters] = useState([]);
@@ -20,6 +27,7 @@ function MethodStudio({ onOpenSettings }) {
   const [isRehearsing, setIsRehearsing] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [rateLimitError, setRateLimitError] = useState(null);
+  const [isWaitingForUser, setIsWaitingForUser] = useState(false);
   
   // Generation State
   const [prompt, setPrompt] = useState('');
@@ -36,8 +44,47 @@ function MethodStudio({ onOpenSettings }) {
   } = useSpeechRecognition();
   
   const audioRef = useRef(null);
-  const audioUrlRef = useRef(null); // Track URL for cleanup
-  const scriptEndRef = useRef(null);
+  const audioUrlRef = useRef(null);
+
+  // --- localStorage Persistence ---
+  
+  // Load saved data on mount
+  useEffect(() => {
+    const savedScript = localStorage.getItem(STORAGE_KEYS.SCRIPT);
+    const savedAssignments = localStorage.getItem(STORAGE_KEYS.ASSIGNMENTS);
+    const savedPrompt = localStorage.getItem(STORAGE_KEYS.PROMPT);
+    
+    if (savedScript) setScript(savedScript);
+    if (savedPrompt) setPrompt(savedPrompt);
+    if (savedAssignments) {
+      try {
+        setAssignments(JSON.parse(savedAssignments));
+      } catch (e) {
+        console.error('Failed to parse saved assignments:', e);
+      }
+    }
+  }, []);
+
+  // Save script when it changes
+  useEffect(() => {
+    if (script) {
+      localStorage.setItem(STORAGE_KEYS.SCRIPT, script);
+    }
+  }, [script]);
+
+  // Save assignments when they change
+  useEffect(() => {
+    if (Object.keys(assignments).length > 0) {
+      localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(assignments));
+    }
+  }, [assignments]);
+
+  // Save prompt when it changes
+  useEffect(() => {
+    if (prompt) {
+      localStorage.setItem(STORAGE_KEYS.PROMPT, prompt);
+    }
+  }, [prompt]);
 
   // --- Effects ---
 
@@ -54,49 +101,6 @@ function MethodStudio({ onOpenSettings }) {
       setCharacters(chars);
     }
   }, [script]);
-
-  // Rehearsal Loop
-  useEffect(() => {
-    if (!isRehearsing || currentLineIndex >= parsedLines.length) {
-      if (currentLineIndex >= parsedLines.length && isRehearsing) {
-        setIsRehearsing(false);
-      }
-      return;
-    }
-
-    const currentLine = parsedLines[currentLineIndex];
-    
-    if (currentLine.type === 'direction') {
-      const timer = setTimeout(() => {
-        advanceLine();
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
-
-    const assignment = assignments[currentLine.character];
-    if (!assignment) return;
-
-    if (assignment.type === 'ai') {
-      stopListening();
-      playLine(currentLine.text, assignment.voiceId);
-    } else {
-      if (isSpeechSupported) {
-        resetTranscript();
-        startListening();
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentLineIndex, isRehearsing, assignments]);
-
-  // Auto-scroll
-  useEffect(() => {
-    if (isRehearsing && scriptEndRef.current) {
-      const element = document.getElementById(`line-${currentLineIndex}`);
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }
-  }, [currentLineIndex, isRehearsing]);
 
   // Cleanup audio URLs on unmount
   useEffect(() => {
@@ -200,9 +204,10 @@ function MethodStudio({ onOpenSettings }) {
     setAssignments(newAssignments);
   };
 
-  const playLine = async (text, voiceId) => {
+  const playLine = useCallback(async (text, voiceId) => {
     if (!voiceId) {
-      setTimeout(advanceLine, 2000);
+      // No voice assigned, wait briefly then advance
+      setTimeout(() => advanceLine(), 1500);
       return;
     }
     
@@ -222,7 +227,7 @@ function MethodStudio({ onOpenSettings }) {
       
       if (audioRef.current) {
         audioRef.current.src = url;
-        audioRef.current.play();
+        await audioRef.current.play();
       }
     } catch (err) {
       console.error('TTS Error:', err);
@@ -232,24 +237,79 @@ function MethodStudio({ onOpenSettings }) {
         setRateLimitError(err);
         setIsRehearsing(false);
       } else {
-        advanceLine();
+        // On error, wait then advance
+        setTimeout(() => advanceLine(), 1000);
       }
     }
-  };
+  }, []);
 
-  const handleAudioEnded = () => {
+  const handleAudioEnded = useCallback(() => {
     setIsPlayingAudio(false);
     // Cleanup URL after playback
     if (audioUrlRef.current) {
       URL.revokeObjectURL(audioUrlRef.current);
       audioUrlRef.current = null;
     }
+    // Only advance after audio fully completes
     advanceLine();
-  };
+  }, []);
 
-  const advanceLine = () => {
+  const advanceLine = useCallback(() => {
+    setIsWaitingForUser(false);
+    stopListening();
     setCurrentLineIndex(prev => prev + 1);
-  };
+  }, [stopListening]);
+
+  // Handle the current line based on who's speaking
+  const processCurrentLine = useCallback(() => {
+    if (!isRehearsing || currentLineIndex >= parsedLines.length) {
+      if (currentLineIndex >= parsedLines.length && isRehearsing) {
+        setIsRehearsing(false);
+        setIsWaitingForUser(false);
+      }
+      return;
+    }
+
+    const currentLine = parsedLines[currentLineIndex];
+    
+    // Stage directions - auto advance after brief pause
+    if (currentLine.type === 'direction') {
+      setTimeout(() => advanceLine(), 2000);
+      return;
+    }
+
+    const assignment = assignments[currentLine.character];
+    if (!assignment) return;
+
+    if (assignment.type === 'ai') {
+      // AI's turn - play the voice
+      setIsWaitingForUser(false);
+      stopListening();
+      playLine(currentLine.text, assignment.voiceId);
+    } else {
+      // User's turn - wait for them
+      setIsWaitingForUser(true);
+      if (isSpeechSupported) {
+        resetTranscript();
+        startListening();
+      }
+    }
+  }, [currentLineIndex, isRehearsing, parsedLines, assignments, playLine, stopListening, startListening, resetTranscript, isSpeechSupported, advanceLine]);
+
+  // Trigger line processing when currentLineIndex or isRehearsing changes
+  useEffect(() => {
+    processCurrentLine();
+  }, [currentLineIndex, isRehearsing, processCurrentLine]);
+
+  // Auto-scroll to current line
+  useEffect(() => {
+    if (isRehearsing) {
+      const element = document.getElementById(`line-${currentLineIndex}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [currentLineIndex, isRehearsing]);
 
   const startRehearsal = () => {
     const unassigned = characters.filter(c => !assignments[c]);
@@ -261,7 +321,31 @@ function MethodStudio({ onOpenSettings }) {
     setStage('rehearsal');
     setCurrentLineIndex(0);
     setIsRehearsing(true);
+    setIsWaitingForUser(false);
   };
+
+  // User clicked "I'm Done" button
+  const handleUserDone = () => {
+    stopListening();
+    setIsWaitingForUser(false);
+    advanceLine();
+  };
+
+  const clearSavedData = () => {
+    localStorage.removeItem(STORAGE_KEYS.SCRIPT);
+    localStorage.removeItem(STORAGE_KEYS.ASSIGNMENTS);
+    localStorage.removeItem(STORAGE_KEYS.PROMPT);
+    setScript('');
+    setAssignments({});
+    setPrompt('');
+    setParsedLines([]);
+    setCharacters([]);
+  };
+
+  // Calculate progress
+  const progressPercent = parsedLines.length > 0 
+    ? Math.round((currentLineIndex / parsedLines.length) * 100) 
+    : 0;
 
   // --- Render ---
 
@@ -295,11 +379,17 @@ function MethodStudio({ onOpenSettings }) {
                 placeholder="E.g., A tense negotiation between a spy and a villain..." 
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
               />
               <button onClick={handleGenerate} disabled={isGenerating}>
                 {isGenerating ? 'Writing...' : 'Generate Script'}
               </button>
             </div>
+            {script && (
+              <button className="clear-btn" onClick={clearSavedData}>
+                Clear Saved Script
+              </button>
+            )}
           </div>
           
           <div className="editor-panel">
@@ -307,7 +397,7 @@ function MethodStudio({ onOpenSettings }) {
             <textarea 
               value={script}
               onChange={(e) => setScript(e.target.value)}
-              placeholder="INT. SCENE - DAY&#10;&#10;CHARACTER&#10;Dialogue here..."
+              placeholder="Format: CHARACTER: Dialogue text&#10;&#10;Example:&#10;HERO: I won't let you get away with this.&#10;VILLAIN: You're too late, the plan is already in motion."
             />
             <div className="actions">
               <button 
@@ -318,11 +408,11 @@ function MethodStudio({ onOpenSettings }) {
                     autoCast();
                     setStage('casting');
                   } else {
-                    alert("No characters detected. Check script format.");
+                    alert("No characters detected. Use format: CHARACTER: Dialogue");
                   }
                 }}
               >
-                Next: Casting
+                Next: Casting →
               </button>
             </div>
           </div>
@@ -333,28 +423,29 @@ function MethodStudio({ onOpenSettings }) {
       {stage === 'casting' && (
         <div className="stage-container casting-stage">
           <h3>Cast Your Scene</h3>
+          <p className="casting-hint">Assign yourself to one character. AI will voice the others.</p>
           <div className="casting-grid">
             {characters.map(char => (
               <div key={char} className="cast-card">
                 <div className="char-name">{char}</div>
                 <div className="role-selector">
-                  <label>
+                  <label className={assignments[char]?.type === 'user' ? 'selected' : ''}>
                     <input 
                       type="radio" 
                       name={`role-${char}`}
                       checked={assignments[char]?.type === 'user'}
                       onChange={() => handleCasting(char, 'user', null)}
                     />
-                    Me (User)
+                    🎤 Me (I&apos;ll speak this)
                   </label>
-                  <label>
+                  <label className={assignments[char]?.type === 'ai' ? 'selected' : ''}>
                     <input 
                       type="radio" 
                       name={`role-${char}`}
                       checked={assignments[char]?.type === 'ai'}
                       onChange={() => handleCasting(char, 'ai', availableVoices[0]?.voice_id)}
                     />
-                    AI Actor
+                    🤖 AI Actor
                   </label>
                 </div>
                 
@@ -374,8 +465,10 @@ function MethodStudio({ onOpenSettings }) {
             ))}
           </div>
           <div className="actions">
-            <button onClick={() => setStage('setup')}>Back</button>
-            <button className="primary-btn" onClick={startRehearsal}>Start Rehearsal</button>
+            <button onClick={() => setStage('setup')}>← Back</button>
+            <button className="primary-btn" onClick={startRehearsal}>
+              🎬 Start Rehearsal
+            </button>
           </div>
         </div>
       )}
@@ -383,60 +476,100 @@ function MethodStudio({ onOpenSettings }) {
       {/* STAGE 3: REHEARSAL */}
       {stage === 'rehearsal' && (
         <div className="stage-container rehearsal-stage">
+          {/* Progress Bar */}
+          <div className="progress-container">
+            <div className="progress-bar" style={{ width: `${progressPercent}%` }} />
+            <span className="progress-text">
+              Line {Math.min(currentLineIndex + 1, parsedLines.length)} of {parsedLines.length}
+            </span>
+          </div>
+
           <div className="script-display">
             {parsedLines.map((line, idx) => {
               const isCurrent = idx === currentLineIndex;
+              const isPast = idx < currentLineIndex;
               const isUser = assignments[line.character]?.type === 'user';
               
               return (
                 <div 
                   key={idx} 
                   id={`line-${idx}`}
-                  className={`script-line ${line.type} ${isCurrent ? 'current' : ''} ${isUser ? 'user-line' : 'ai-line'}`}
+                  className={`script-line ${line.type} ${isCurrent ? 'current' : ''} ${isPast ? 'past' : ''} ${isUser ? 'user-line' : 'ai-line'}`}
                 >
                   {line.type === 'dialogue' && (
-                    <div className="character-label">{line.character}</div>
+                    <div className="character-label">
+                      {isUser ? '🎤 ' : '🤖 '}{line.character}
+                    </div>
                   )}
                   <div className="text-content">{line.text}</div>
                 </div>
               );
             })}
-            <div ref={scriptEndRef} />
           </div>
+
+          {/* User "I'm Done" Button - Only shows on user turns */}
+          {isWaitingForUser && isRehearsing && (
+            <div className="user-done-container">
+              <div className="listening-indicator">
+                <span className="pulse-dot"></span>
+                {isListening ? 'Listening to you...' : 'Your turn to speak'}
+              </div>
+              {transcript && (
+                <div className="live-transcript">&ldquo;{transcript}&rdquo;</div>
+              )}
+              <button className="done-btn" onClick={handleUserDone}>
+                ✓ I&apos;m Done Speaking
+              </button>
+            </div>
+          )}
+
+          {/* AI Speaking Indicator */}
+          {isPlayingAudio && (
+            <div className="ai-speaking-container">
+              <div className="speaking-indicator">
+                <span className="sound-wave">🔊</span>
+                AI is speaking...
+              </div>
+            </div>
+          )}
 
           <div className="controls-bar">
             <div className="status-indicator">
-              {isRehearsing && parsedLines[currentLineIndex] && (
-                <>
-                  {assignments[parsedLines[currentLineIndex].character]?.type === 'user' ? (
-                    <span className="status-user">
-                      {isListening ? '🎤 Listening...' : 'Your Turn'}
-                    </span>
-                  ) : (
-                    <span className="status-ai">
-                      {isPlayingAudio ? '🔊 Speaking...' : 'Waiting...'}
-                    </span>
-                  )}
-                </>
+              {!isRehearsing && currentLineIndex >= parsedLines.length ? (
+                <span className="status-complete">🎉 Scene Complete!</span>
+              ) : isWaitingForUser ? (
+                <span className="status-user">🎤 YOUR TURN</span>
+              ) : isPlayingAudio ? (
+                <span className="status-ai">🔊 AI Speaking</span>
+              ) : (
+                <span className="status-waiting">⏳ Loading...</span>
               )}
-            </div>
-            
-            <div className="transcript-preview">
-              {isListening && transcript}
             </div>
 
             <div className="buttons">
               <button onClick={() => setIsRehearsing(!isRehearsing)}>
-                {isRehearsing ? 'Pause' : 'Resume'}
+                {isRehearsing ? '⏸ Pause' : '▶ Resume'}
               </button>
-              <button onClick={advanceLine} className="next-btn">
-                Next Line ➔
+              <button onClick={advanceLine} className="skip-btn">
+                Skip →
+              </button>
+              <button 
+                className="restart-btn"
+                onClick={() => {
+                  setCurrentLineIndex(0);
+                  setIsRehearsing(true);
+                  setIsWaitingForUser(false);
+                }}
+              >
+                ↺ Restart
               </button>
               <button onClick={() => {
                 setIsRehearsing(false);
+                setIsWaitingForUser(false);
+                stopListening();
                 setStage('casting');
               }}>
-                Stop
+                ✕ Stop
               </button>
             </div>
           </div>

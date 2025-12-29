@@ -17,7 +17,6 @@ const validateEnv = () => {
     console.warn('   Some features may not work correctly.');
   }
   
-  // Check for placeholder values
   if (process.env.ELEVENLABS_API_KEY === 'test_key') {
     console.warn('⚠️  Warning: ELEVENLABS_API_KEY is set to test_key - voice synthesis will fail');
   }
@@ -26,30 +25,19 @@ const validateEnv = () => {
 validateEnv();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8080;
 
-// CORS Configuration - secure for production
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'http://localhost:80',
-  'http://localhost',
-  process.env.FRONTEND_URL,
-  process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null,
-].filter(Boolean);
-
+// CORS Configuration - allow Cloud Run frontend
 const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
     
-    // Check if origin is allowed
-    if (allowedOrigins.some(allowed => origin.startsWith(allowed) || allowed === '*')) {
-      return callback(null, true);
-    }
-    
-    // In development, be more permissive
-    if (process.env.NODE_ENV !== 'production') {
+    // Allow all Cloud Run domains and localhost
+    if (origin.includes('.run.app') || 
+        origin.includes('localhost') || 
+        origin.includes('127.0.0.1') ||
+        process.env.NODE_ENV !== 'production') {
       return callback(null, true);
     }
     
@@ -63,21 +51,12 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 
-// Request logging in development
-if (process.env.NODE_ENV !== 'production') {
-  app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
-    next();
-  });
-}
-
-// Health check endpoint (used by Docker/Railway)
+// Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     message: 'Method-AI Backend is running',
-    timestamp: new Date().toISOString(),
-    version: process.env.npm_package_version || '1.0.0'
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -86,16 +65,10 @@ app.use('/api/gemini', geminiRoutes);
 app.use('/api/voice', voiceRoutes);
 app.use('/api/personas', personaRoutes);
 
-// 404 handler for API routes
-app.use('/api/*', (req, res) => {
-  res.status(404).json({ error: 'API endpoint not found' });
-});
-
 // Global error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Error:', err.stack);
+  console.error('Error:', err.message);
   
-  // Handle CORS errors
   if (err.message === 'Not allowed by CORS') {
     return res.status(403).json({ error: 'CORS not allowed' });
   }
@@ -107,6 +80,5 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🎭 Method-AI Backend is running on port ${PORT}`);
-  console.log(`   Health check: http://localhost:${PORT}/api/health`);
+  console.log(`🎭 Method-AI Backend running on port ${PORT}`);
 });
