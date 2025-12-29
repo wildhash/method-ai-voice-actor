@@ -1,8 +1,8 @@
 # Backend Dockerfile
 FROM node:18-alpine
 
-# Install wget for healthcheck
-RUN apk add --no-cache wget
+# Install curl for healthcheck
+RUN apk add --no-cache curl
 
 WORKDIR /app
 
@@ -27,7 +27,7 @@ EXPOSE 3001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget -q --spider http://localhost:3001/api/health || exit 1
+  CMD curl -f http://localhost:3001/api/health || exit 1
 
 # Start the server
 CMD ["npm", "start"]

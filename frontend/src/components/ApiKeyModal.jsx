@@ -12,16 +12,6 @@ function ApiKeyModal({ isOpen, onClose, onKeyUpdated }) {
   const [loading, setLoading] = useState(false);
   const [showKey, setShowKey] = useState(false);
 
-  useEffect(() => {
-    if (isOpen) {
-      const currentKey = getUserApiKey();
-      if (currentKey) {
-        setApiKey(currentKey);
-      }
-      fetchStatus();
-    }
-  }, [isOpen]);
-
   const fetchStatus = async () => {
     try {
       const data = await getVoiceStatus();
@@ -30,6 +20,18 @@ function ApiKeyModal({ isOpen, onClose, onKeyUpdated }) {
       console.error('Failed to fetch status:', err);
     }
   };
+
+  useEffect(() => {
+    if (isOpen) {
+      // Load API key from localStorage when modal opens
+      const currentKey = getUserApiKey();
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setApiKey(currentKey || '');
+      
+      // Fetch current status
+      fetchStatus();
+    }
+  }, [isOpen]);
 
   const handleSave = () => {
     setLoading(true);
