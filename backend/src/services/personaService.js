@@ -189,9 +189,10 @@ export const generateVoice = async (name, description) => {
  * Create a new persona with AI-generated prompt and voice
  * @param {string} name - Character name
  * @param {string} description - Character description/vibe
+ * @param {string} [voiceId] - Optional existing voice ID to use
  * @returns {Promise<Object>} The created persona object
  */
-export const createPersona = async (name, description) => {
+export const createPersona = async (name, description, voiceId = null) => {
   try {
     // Generate persona ID from name
     const personaId = name.toLowerCase().replace(/[^a-z0-9]+/g, '_');
@@ -206,16 +207,22 @@ export const createPersona = async (name, description) => {
     console.log(`Generating system prompt for ${name}...`);
     const systemPrompt = await generateSystemPrompt(name, description);
     
-    // Step 2: Generate voice using ElevenLabs
-    console.log(`Generating voice for ${name}...`);
-    const voiceId = await generateVoice(name, description);
+    // Step 2: Handle Voice (Generate or Use Existing)
+    let finalVoiceId = voiceId;
+    
+    if (!finalVoiceId) {
+      console.log(`Generating voice for ${name}...`);
+      finalVoiceId = await generateVoice(name, description);
+    } else {
+      console.log(`Using existing voice ID: ${finalVoiceId}`);
+    }
     
     // Step 3: Create and save the persona
     const newPersona = {
       id: personaId,
       label: name,
       systemPrompt: systemPrompt,
-      elevenLabsVoiceId: voiceId,
+      elevenLabsVoiceId: finalVoiceId,
       description: description,
       isCustom: true,
       createdAt: new Date().toISOString()

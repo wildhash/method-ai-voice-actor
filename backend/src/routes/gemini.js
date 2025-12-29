@@ -1,12 +1,12 @@
 import express from 'express';
-import { rewriteText, rewriteTextAsMethodActor, generateCharacterDialogue } from '../services/geminiService.js';
+import { rewriteText, rewriteTextAsMethodActor, generateCharacterDialogue, chatWithPersona } from '../services/geminiService.js';
 
 const router = express.Router();
 
 // Method Actor endpoint - The core "perform" functionality
 router.post('/perform', async (req, res) => {
   try {
-    const { text, personaKey, deepRehearsal } = req.body;
+    const { text, personaKey } = req.body;
     
     if (!text || !personaKey) {
       return res.status(400).json({ 
@@ -14,8 +14,8 @@ router.post('/perform', async (req, res) => {
       });
     }
     
-    // Determine which model to use based on deepRehearsal flag
-    const modelName = deepRehearsal ? 'gemini-pro-latest' : 'gemini-flash-latest';
+    // Always use flash model for performance
+    const modelName = 'gemini-flash-latest';
     
     // personaKey should be the full persona description
     const script = await rewriteTextAsMethodActor(text, personaKey, modelName);
@@ -23,6 +23,27 @@ router.post('/perform', async (req, res) => {
   } catch (error) {
     res.status(500).json({ 
       error: 'Failed to perform text',
+      message: error.message 
+    });
+  }
+});
+
+// Interactive Chat Endpoint
+router.post('/chat', async (req, res) => {
+  try {
+    const { message, personaKey, history } = req.body;
+    
+    if (!message || !personaKey) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: message and personaKey' 
+      });
+    }
+    
+    const response = await chatWithPersona(message, personaKey, history || []);
+    res.json({ response });
+  } catch (error) {
+    res.status(500).json({ 
+      error: 'Failed to chat with persona',
       message: error.message 
     });
   }

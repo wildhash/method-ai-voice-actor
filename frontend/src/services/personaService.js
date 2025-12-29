@@ -17,12 +17,14 @@ export const getAllPersonas = async () => {
  * Create a new custom persona
  * @param {string} name - Character name
  * @param {string} description - Character description/vibe
+ * @param {string} [voiceId] - Optional voice ID
  */
-export const createPersona = async (name, description) => {
+export const createPersona = async (name, description, voiceId = null) => {
   try {
     const response = await api.post('/personas/create', {
       name,
-      description
+      description,
+      voiceId
     });
     return response.data;
   } catch (error) {

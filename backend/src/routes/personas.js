@@ -68,7 +68,7 @@ router.post('/create', async (req, res) => {
     
     // Create the persona (this will call Gemini + ElevenLabs)
     console.log(`Creating new persona: ${name}`);
-    const newPersona = await createPersona(name.trim(), description.trim());
+    const newPersona = await createPersona(name.trim(), description.trim(), req.body.voiceId);
     
     res.status(201).json(newPersona);
   } catch (error) {

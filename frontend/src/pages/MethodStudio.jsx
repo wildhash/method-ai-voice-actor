@@ -1,234 +1,408 @@
-import { useState, useEffect } from 'react';
-import { PERSONAS, getPersonasArray } from '../personas';
+import { useState, useEffect, useRef } from 'react';
+import { PERSONAS } from '../personas';
 import api from '../services/api';
 import { getAllPersonas } from '../services/personaService';
+import { getVoices } from '../services/voiceService';
 import PersonaManager from './PersonaManager';
 import './MethodStudio.css';
 
 function MethodStudio() {
-  // State Management
-  const [inputText, setInputText] = useState('');
+  // Script & Rehearsal State
   const [script, setScript] = useState('');
+  const [parsedLines, setParsedLines] = useState([]);
+  const [currentLineIndex, setCurrentLineIndex] = useState(0);
+  const [userCharacter, setUserCharacter] = useState('');
+  const [partnerCharacter, setPartnerCharacter] = useState('');
+  const [detectedCharacters, setDetectedCharacters] = useState([]);
+  
+  // Persona & Voice State
   const [selectedPersona, setSelectedPersona] = useState('noir_detective');
-  const [deepRehearsal, setDeepRehearsal] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [audioUrl, setAudioUrl] = useState(null);
-  const [showPersonaManager, setShowPersonaManager] = useState(false);
   const [allPersonas, setAllPersonas] = useState(PERSONAS);
-
-  const personas = getPersonasArray();
+  const [availableVoices, setAvailableVoices] = useState([]);
+  const [selectedVoiceOverride, setSelectedVoiceOverride] = useState('');
+  
+  // UI State
+  const [loading, setLoading] = useState(false);
+  const [isRehearsing, setIsRehearsing] = useState(false);
+  const [showPersonaManager, setShowPersonaManager] = useState(false);
+  const [rehearsalHistory, setRehearsalHistory] = useState([]);
+  
+  const chatEndRef = useRef(null);
   const currentPersona = allPersonas[selectedPersona] || PERSONAS[selectedPersona];
 
-  // Load all personas (default + custom) on mount
-  useEffect(() => {
-    loadAllPersonas();
-  }, []);
-
+  // Define load functions first
   const loadAllPersonas = async () => {
     try {
       const fetchedPersonas = await getAllPersonas();
-      // Ensure we have a valid object, not an array or null
       if (fetchedPersonas && typeof fetchedPersonas === 'object' && !Array.isArray(fetchedPersonas)) {
         setAllPersonas(fetchedPersonas);
       } else {
-        console.warn('Invalid personas format received, using defaults');
         setAllPersonas(PERSONAS);
       }
     } catch (error) {
       console.error('Failed to load personas:', error);
-      // Fall back to default personas
       setAllPersonas(PERSONAS);
     }
   };
 
-  // Cleanup audio URL on unmount or when new audio is generated
-  useEffect(() => {
-    return () => {
-      if (audioUrl) {
-        URL.revokeObjectURL(audioUrl);
-      }
-    };
-  }, [audioUrl]);
-
-  // The REHEARSE button handler
-  const handleRehearsal = async () => {
-    if (!inputText || !selectedPersona || !currentPersona) return;
-
-    setLoading(true);
-    setScript('');
-    setAudioUrl(null);
-
+  const loadVoices = async () => {
     try {
-      // Call the /api/gemini/perform endpoint
-      const response = await api.post('/gemini/perform', {
-        text: inputText,
-        personaKey: currentPersona.systemPrompt,
-        deepRehearsal: deepRehearsal
-      });
-
-      const generatedScript = response.data.script;
-      setScript(generatedScript);
-
-      // Automatically trigger ElevenLabs TTS
-      await synthesizeSpeech(generatedScript);
-    } catch (error) {
-      console.error('Failed to perform rehearsal:', error);
-      alert('Failed to perform rehearsal. Please check your API configuration and try again.');
-    } finally {
-      setLoading(false);
+      const data = await getVoices();
+      let voicesList = [];
+      if (data.voices && Array.isArray(data.voices)) {
+        voicesList = data.voices;
+      } else if (Array.isArray(data)) {
+        voicesList = data;
+      }
+      setAvailableVoices(voicesList);
+    } catch (err) {
+      console.error('Failed to load voices:', err);
     }
   };
 
-  // Synthesize speech using ElevenLabs
-  const synthesizeSpeech = async (text) => {
-    if (!currentPersona || !currentPersona.elevenLabsVoiceId) {
-      console.error('Cannot synthesize speech: persona or voice ID missing');
+  // Load personas and voices on mount
+  useEffect(() => {
+    loadAllPersonas();
+    loadVoices();
+  }, []);
+
+  // Scroll to bottom of rehearsal
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [rehearsalHistory, loading]);
+
+  // Parse script into lines with character names
+  const parseScript = (text) => {
+    const lines = text.split('\n').filter(line => line.trim());
+    const parsed = [];
+    const characters = new Set();
+    
+    // Common patterns: "CHARACTER: dialogue" or "CHARACTER\ndialogue"
+    const linePattern = /^([A-Z][A-Z0-9\s_-]*?):\s*(.+)$/;
+    
+    lines.forEach((line, index) => {
+      const match = line.match(linePattern);
+      if (match) {
+        const character = match[1].trim();
+        const dialogue = match[2].trim();
+        characters.add(character);
+        parsed.push({
+          index,
+          character,
+          dialogue,
+          raw: line
+        });
+      } else if (line.trim() && parsed.length > 0) {
+        // Continuation of previous line
+        parsed[parsed.length - 1].dialogue += ' ' + line.trim();
+        parsed[parsed.length - 1].raw += '\n' + line;
+      } else if (line.trim()) {
+        // Stage direction or unattributed line
+        parsed.push({
+          index,
+          character: 'STAGE DIRECTION',
+          dialogue: line.trim(),
+          raw: line,
+          isDirection: true
+        });
+      }
+    });
+    
+    setParsedLines(parsed);
+    setDetectedCharacters(Array.from(characters));
+    
+    // Auto-assign first two characters
+    const charArray = Array.from(characters);
+    if (charArray.length >= 1 && !userCharacter) {
+      setUserCharacter(charArray[0]);
+    }
+    if (charArray.length >= 2 && !partnerCharacter) {
+      setPartnerCharacter(charArray[1]);
+    }
+  };
+
+  // Parse script when it changes
+  useEffect(() => {
+    if (script.trim()) {
+      parseScript(script);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [script]);
+
+  // Start rehearsal
+  const startRehearsal = () => {
+    if (parsedLines.length === 0) {
+      alert('Please enter a script first');
+      return;
+    }
+    if (!userCharacter || !partnerCharacter) {
+      alert('Please select your character and your scene partner');
+      return;
+    }
+    setIsRehearsing(true);
+    setCurrentLineIndex(0);
+    setRehearsalHistory([]);
+    advanceToNextCue(0);
+  };
+
+  // Advance to next cue
+  const advanceToNextCue = (startIndex) => {
+    // Find the next line that's either user's or partner's
+    for (let i = startIndex; i < parsedLines.length; i++) {
+      const line = parsedLines[i];
+      if (line.character === userCharacter || line.character === partnerCharacter) {
+        setCurrentLineIndex(i);
+        return;
+      }
+    }
+    // End of script
+    setIsRehearsing(false);
+    alert('🎬 Scene Complete! Great rehearsal!');
+  };
+
+  // Handle reading a line (user clicks to deliver their line)
+  const deliverLine = async () => {
+    const currentLine = parsedLines[currentLineIndex];
+    if (!currentLine) return;
+
+    // Add user's line to history
+    setRehearsalHistory(prev => [...prev, {
+      character: currentLine.character,
+      dialogue: currentLine.dialogue,
+      isUser: currentLine.character === userCharacter
+    }]);
+
+    // Find the next line
+    const nextIndex = currentLineIndex + 1;
+    
+    // Check if next line is partner's
+    if (nextIndex < parsedLines.length) {
+      const nextLine = parsedLines[nextIndex];
+      
+      if (nextLine.character === partnerCharacter) {
+        // Partner responds
+        setLoading(true);
+        await speakPartnerLine(nextLine.dialogue);
+        setLoading(false);
+        
+        // Add partner's line to history
+        setRehearsalHistory(prev => [...prev, {
+          character: nextLine.character,
+          dialogue: nextLine.dialogue,
+          isUser: false
+        }]);
+        
+        // Advance past partner's line
+        advanceToNextCue(nextIndex + 1);
+      } else {
+        // Next line is user's or direction
+        advanceToNextCue(nextIndex);
+      }
+    } else {
+      // End of script
+      setIsRehearsing(false);
+      alert('🎬 Scene Complete! Great rehearsal!');
+    }
+  };
+
+  // Speak partner's line with TTS
+  const speakPartnerLine = async (text) => {
+    const voiceId = selectedVoiceOverride || currentPersona?.elevenLabsVoiceId;
+    
+    if (!voiceId) {
+      console.warn('No voice ID available');
       return;
     }
 
     try {
-      // Revoke previous audio URL to prevent memory leaks
-      if (audioUrl) {
-        URL.revokeObjectURL(audioUrl);
-      }
-
       const response = await api.post('/voice/synthesize', {
-        text,
-        voiceId: currentPersona.elevenLabsVoiceId
+        text: text,
+        voiceId: voiceId
       }, {
         responseType: 'blob'
       });
-
-      const url = URL.createObjectURL(response.data);
-      setAudioUrl(url);
+      
+      const audioUrl = URL.createObjectURL(response.data);
+      const audio = new Audio(audioUrl);
+      
+      await new Promise((resolve) => {
+        audio.onended = resolve;
+        audio.onerror = resolve;
+        audio.play().catch(resolve);
+      });
+      
+      URL.revokeObjectURL(audioUrl);
     } catch (error) {
       console.error('Failed to synthesize speech:', error);
-      // Don't throw - we want to show the text even if audio fails
     }
   };
+
+  // Stop rehearsal
+  const stopRehearsal = () => {
+    setIsRehearsing(false);
+    setCurrentLineIndex(0);
+  };
+
+  // Get current line for display
+  const currentLine = parsedLines[currentLineIndex];
+  const isUserTurn = currentLine?.character === userCharacter;
 
   return (
     <div className="method-studio">
       <div className="method-studio-container">
-        <h1>Method AI - The Rehearsal Engine</h1>
-        <p className="subtitle">Transform any text into character performances</p>
+        <h1>Method AI - Scene Rehearsal</h1>
+        <p className="subtitle">Rehearse scenes with an AI scene partner</p>
 
-        <div className="three-column-layout">
-          {/* Left Column: The Script */}
+        <div className="studio-layout">
+          {/* Left Column: Script & Controls */}
           <div className="column script-column">
             <div className="column-header">
               <h2>📜 The Script</h2>
-              <p>Paste your raw text here</p>
             </div>
             <div className="column-content">
-              <textarea
-                className="script-textarea"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                placeholder="Enter your text here... (documentation, scripts, manuals, or any text you want to transform)"
-                rows={20}
-              />
-            </div>
-          </div>
+              {!isRehearsing ? (
+                <>
+                  <div className="control-group">
+                    <label>Paste your script:</label>
+                    <textarea
+                      className="script-textarea"
+                      value={script}
+                      onChange={(e) => setScript(e.target.value)}
+                      placeholder={`Paste your script here. Format each line as:\n\nCHARACTER: Their dialogue goes here.\nOTHER CHARACTER: Their response.\n\nExample:\nDETECTIVE: Where were you on the night of the murder?\nSUSPECT: I was at home, alone. You can't prove anything.`}
+                      rows={12}
+                    />
+                  </div>
 
-          {/* Center Column: The Director's Chair */}
-          <div className="column director-column">
-            <div className="column-header">
-              <h2>🎬 The Director&apos;s Chair</h2>
-              <p>Choose your persona</p>
-            </div>
-            <div className="column-content">
-              <div className="persona-selector">
-                <label htmlFor="persona-select">Select Persona:</label>
-                <select
-                  id="persona-select"
-                  value={selectedPersona}
-                  onChange={(e) => setSelectedPersona(e.target.value)}
-                  className="persona-dropdown"
-                >
-                  {allPersonas && typeof allPersonas === 'object' && Object.entries(allPersonas).map(([key, persona]) => (
-                    <option key={key} value={key}>
-                      {persona?.label || key} {persona?.isCustom ? '⭐' : ''}
-                    </option>
-                  ))}
-                </select>
-                <button 
-                  className="btn-manage-cast"
-                  onClick={() => setShowPersonaManager(true)}
-                  title="Manage personas"
-                >
-                  🎭 Manage Cast
-                </button>
-              </div>
+                  {detectedCharacters.length > 0 && (
+                    <div className="character-assignment">
+                      <h4>🎭 Cast Assignment</h4>
+                      <div className="assignment-row">
+                        <label>You play:</label>
+                        <select 
+                          value={userCharacter} 
+                          onChange={(e) => setUserCharacter(e.target.value)}
+                        >
+                          <option value="">Select your character...</option>
+                          {detectedCharacters.map(char => (
+                            <option key={char} value={char}>{char}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="assignment-row">
+                        <label>Scene partner plays:</label>
+                        <select 
+                          value={partnerCharacter} 
+                          onChange={(e) => setPartnerCharacter(e.target.value)}
+                        >
+                          <option value="">Select partner character...</option>
+                          {detectedCharacters.map(char => (
+                            <option key={char} value={char}>{char}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
 
-              <div className="persona-info">
-                <h3>Character Description:</h3>
-                <p className="persona-description">
-                  {currentPersona?.systemPrompt || 'Select a persona'}
-                </p>
-              </div>
+                  <div className="control-group">
+                    <label>Partner Voice:</label>
+                    <select
+                      value={selectedVoiceOverride || currentPersona?.elevenLabsVoiceId || ''}
+                      onChange={(e) => setSelectedVoiceOverride(e.target.value)}
+                      className="voice-dropdown"
+                    >
+                      <option value="">Select a voice...</option>
+                      {availableVoices.map(voice => (
+                        <option key={voice.voice_id} value={voice.voice_id}>
+                          {voice.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              <div className="deep-rehearsal-toggle">
-                <label className="toggle-container">
-                  <input
-                    type="checkbox"
-                    checked={deepRehearsal}
-                    onChange={(e) => setDeepRehearsal(e.target.checked)}
-                  />
-                  <span className="toggle-label">
-                    🧠 Deep Rehearsal Mode
-                  </span>
-                </label>
-                <p className="toggle-description">
-                  {deepRehearsal 
-                    ? "Using Gemini 3.0 Pro for highly analytical breakdown (slower but smarter)"
-                    : "Using Gemini 3.0 Flash for fast performance (optimized for speed)"
-                  }
-                </p>
-              </div>
-
-              <button
-                className="rehearse-btn"
-                onClick={handleRehearsal}
-                disabled={loading || !inputText}
-              >
-                {loading ? '🎭 PERFORMING...' : '🎭 REHEARSE'}
-              </button>
-
-              {loading && (
-                <div className="loading-indicator">
-                  <div className="spinner"></div>
-                  <p>Method acting in progress...</p>
-                </div>
+                  <button 
+                    className="btn-start-rehearsal"
+                    onClick={startRehearsal}
+                    disabled={parsedLines.length === 0 || !userCharacter || !partnerCharacter}
+                  >
+                    🎬 Start Rehearsal
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="script-preview">
+                    <h4>Full Script</h4>
+                    <div className="script-lines">
+                      {parsedLines.map((line, idx) => (
+                        <div 
+                          key={idx} 
+                          className={`script-line ${idx === currentLineIndex ? 'current' : ''} ${idx < currentLineIndex ? 'done' : ''}`}
+                        >
+                          <span className="line-character">{line.character}:</span>
+                          <span className="line-dialogue">{line.dialogue}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <button className="btn-stop-rehearsal" onClick={stopRehearsal}>
+                    ⏹️ End Rehearsal
+                  </button>
+                </>
               )}
             </div>
           </div>
 
-          {/* Right Column: The Performance */}
-          <div className="column performance-column">
+          {/* Right Column: Rehearsal Area */}
+          <div className="column scene-column">
             <div className="column-header">
-              <h2>🎤 The Performance</h2>
-              <p>Generated character script</p>
+              <h2>🎭 Rehearsal</h2>
             </div>
-            <div className="column-content">
-              <textarea
-                className="performance-textarea"
-                value={script}
-                readOnly
-                placeholder="The rewritten text in character will appear here..."
-                rows={20}
-              />
-
-              {audioUrl && (
-                <div className="audio-player-section">
-                  <h3>🔊 Audio Performance</h3>
-                  <audio controls src={audioUrl} className="audio-player">
-                    Your browser does not support the audio element.
-                  </audio>
-                  <a href={audioUrl} download="performance.mp3" className="download-btn">
-                    Download Audio
-                  </a>
+            <div className="rehearsal-container">
+              {!isRehearsing ? (
+                <div className="empty-state">
+                  <p>Paste a script and click &quot;Start Rehearsal&quot; to begin</p>
                 </div>
+              ) : (
+                <>
+                  <div className="rehearsal-history">
+                    {rehearsalHistory.map((entry, idx) => (
+                      <div key={idx} className={`rehearsal-line ${entry.isUser ? 'user' : 'partner'}`}>
+                        <div className="line-header">{entry.character}</div>
+                        <div className="line-text">{entry.dialogue}</div>
+                      </div>
+                    ))}
+                    {loading && (
+                      <div className="rehearsal-line partner loading">
+                        <div className="typing-indicator">
+                          <span></span><span></span><span></span>
+                        </div>
+                      </div>
+                    )}
+                    <div ref={chatEndRef} />
+                  </div>
+
+                  {/* Current Cue */}
+                  {currentLine && (
+                    <div className="current-cue">
+                      {isUserTurn ? (
+                        <>
+                          <div className="cue-label">YOUR LINE ({currentLine.character}):</div>
+                          <div className="cue-text">{currentLine.dialogue}</div>
+                          <button 
+                            className="btn-deliver-line"
+                            onClick={deliverLine}
+                            disabled={loading}
+                          >
+                            🎤 Deliver Line
+                          </button>
+                        </>
+                      ) : (
+                        <div className="waiting-for-partner">
+                          <div className="cue-label">Waiting for {currentLine.character}...</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -239,15 +413,11 @@ function MethodStudio() {
           <PersonaManager
             personas={allPersonas}
             onPersonaCreated={(newPersona) => {
-              // Reload all personas to get the updated list
               loadAllPersonas();
-              // Optionally select the new persona
               setSelectedPersona(newPersona.id);
             }}
             onPersonaDeleted={(deletedId) => {
-              // Reload all personas
               loadAllPersonas();
-              // If the deleted persona was selected, switch to a default
               if (selectedPersona === deletedId) {
                 setSelectedPersona('noir_detective');
               }

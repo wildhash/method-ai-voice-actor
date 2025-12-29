@@ -1,13 +1,35 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createPersona, deletePersona } from '../services/personaService';
+import { getVoices } from '../services/voiceService';
 import './PersonaManager.css';
 import PropTypes from 'prop-types';
 
 function PersonaManager({ personas, onPersonaCreated, onPersonaDeleted, onClose }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [selectedVoiceId, setSelectedVoiceId] = useState('');
+  const [availableVoices, setAvailableVoices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    loadVoices();
+  }, []);
+
+  const loadVoices = async () => {
+    try {
+      const data = await getVoices();
+      let voicesList = [];
+      if (data.voices && Array.isArray(data.voices)) {
+        voicesList = data.voices;
+      } else if (Array.isArray(data)) {
+        voicesList = data;
+      }
+      setAvailableVoices(voicesList);
+    } catch (err) {
+      console.error('Failed to load voices:', err);
+    }
+  };
 
   const handleCreatePersona = async (e) => {
     e.preventDefault();
@@ -21,11 +43,12 @@ function PersonaManager({ personas, onPersonaCreated, onPersonaDeleted, onClose 
     setError(null);
 
     try {
-      const newPersona = await createPersona(name.trim(), description.trim());
+      const newPersona = await createPersona(name.trim(), description.trim(), selectedVoiceId || null);
       
       // Reset form
       setName('');
       setDescription('');
+      setSelectedVoiceId('');
       
       // Notify parent component
       if (onPersonaCreated) {
@@ -96,6 +119,24 @@ function PersonaManager({ personas, onPersonaCreated, onPersonaDeleted, onClose 
                   disabled={loading}
                   required
                 />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="persona-voice">Voice (Optional)</label>
+                <select
+                  id="persona-voice"
+                  value={selectedVoiceId}
+                  onChange={(e) => setSelectedVoiceId(e.target.value)}
+                  disabled={loading}
+                >
+                  <option value="">✨ Auto-generate new voice (Default)</option>
+                  {availableVoices.map(voice => (
+                    <option key={voice.voice_id} value={voice.voice_id}>
+                      {voice.name} ({voice.category || 'Standard'})
+                    </option>
+                  ))}
+                </select>
+                <small>Select an existing voice or let AI create a new one based on description</small>
               </div>
 
               <div className="form-group">
