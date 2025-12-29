@@ -26,3 +26,16 @@ export const generateDialogue = async (scenario, characterName, characterTraits)
     throw error;
   }
 };
+
+export const generateScript = async (prompt) => {
+  try {
+    const response = await api.post('/gemini/generate-script', {
+      prompt,
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error generating script:', error);
+    throw error;
+  }
+};
+

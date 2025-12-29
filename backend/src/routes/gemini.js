@@ -1,7 +1,28 @@
 import express from 'express';
-import { rewriteText, rewriteTextAsMethodActor, generateCharacterDialogue, chatWithPersona } from '../services/geminiService.js';
+import { rewriteText, rewriteTextAsMethodActor, generateCharacterDialogue, chatWithPersona, generateScript } from '../services/geminiService.js';
 
 const router = express.Router();
+
+// Generate Script Endpoint
+router.post('/generate-script', async (req, res) => {
+  try {
+    const { prompt } = req.body;
+    
+    if (!prompt) {
+      return res.status(400).json({ 
+        error: 'Missing required field: prompt' 
+      });
+    }
+    
+    const script = await generateScript(prompt);
+    res.json({ script });
+  } catch (error) {
+    res.status(500).json({ 
+      error: 'Failed to generate script',
+      message: error.message 
+    });
+  }
+});
 
 // Method Actor endpoint - The core "perform" functionality
 router.post('/perform', async (req, res) => {

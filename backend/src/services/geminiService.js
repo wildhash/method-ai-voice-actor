@@ -114,3 +114,33 @@ Generate a natural, in-character response as ${characterName}.`;
     throw error;
   }
 };
+
+/**
+ * Generate a screenplay scene based on a prompt
+ * @param {string} prompt - The scene description
+ * @returns {Promise<string>} The generated script
+ */
+export const generateScript = async (prompt) => {
+  try {
+    const model = getVertexAIModel('gemini-flash-latest');
+    
+    const systemInstruction = `You are an expert screenwriter. Write a scene based on the user's prompt.
+Format: Standard Screenplay Format.
+1. Start with a Scene Heading (e.g., INT. COFFEE SHOP - DAY).
+2. Use character names in ALL CAPS centered above dialogue.
+3. Include parentheticals for delivery instructions if needed.
+4. Keep it under 3 pages.
+5. Ensure distinct voices for characters.
+6. Output ONLY the script content, no markdown code blocks or explanations.`;
+
+    const fullPrompt = `${systemInstruction}\n\nPrompt: ${prompt}`;
+    
+    const result = await model.generateContent(fullPrompt);
+    const response = await result.response;
+    return response.text();
+  } catch (error) {
+    console.error('Error generating script:', error);
+    throw error;
+  }
+};
+
