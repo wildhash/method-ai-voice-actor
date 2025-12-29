@@ -1,48 +1,42 @@
-import { VertexAI } from '@google-cloud/vertexai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// Initialize Vertex AI with validation
-const projectId = process.env.GCP_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT;
-const location = process.env.GCP_REGION || 'us-central1';
+// Initialize Gemini AI with validation
+const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 
-let vertexAI;
+let genAI;
 
-const initializeVertexAI = () => {
-  if (!projectId) {
+const initializeGenAI = () => {
+  if (!apiKey) {
     throw new Error(
-      'GCP_PROJECT_ID environment variable is required. ' +
-      'Please set it in your .env file or run "gcloud config set project YOUR_PROJECT_ID"'
+      'GEMINI_API_KEY or GOOGLE_API_KEY environment variable is required. ' +
+      'Please set it in your .env file.'
     );
   }
   
-  if (!location) {
-    throw new Error('GCP_REGION environment variable is required.');
-  }
-  
-  return new VertexAI({ project: projectId, location: location });
+  return new GoogleGenerativeAI(apiKey);
 };
 
-export const getVertexAIModel = (modelName = 'gemini-3.0-flash', generationConfig = null) => {
-  if (!vertexAI) {
-    vertexAI = initializeVertexAI();
+export const getGeminiModel = (modelName = 'gemini-flash-latest', generationConfig = null) => {
+  if (!genAI) {
+    genAI = initializeGenAI();
   }
   
   const modelConfig = { model: modelName };
   
-  // Add generation config if provided, otherwise use defaults for gemini-3.0-flash
   if (generationConfig) {
     modelConfig.generationConfig = generationConfig;
-  } else if (modelName === 'gemini-3.0-flash' || modelName === 'gemini-3.0-pro') {
+  } else {
     modelConfig.generationConfig = {
       maxOutputTokens: 2048,
-      temperature: 0.9, // High temp = better "creative acting"
+      temperature: 0.9,
       topP: 0.95,
     };
   }
   
-  return vertexAI.getGenerativeModel(modelConfig);
+  return genAI.getGenerativeModel(modelConfig);
 };
 
-// Legacy export for backward compatibility
-export const getGeminiModel = getVertexAIModel;
+// Alias for compatibility with existing code that calls getVertexAIModel
+export const getVertexAIModel = getGeminiModel;
 
-export default vertexAI;
+export default genAI;

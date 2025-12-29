@@ -15,7 +15,7 @@ router.post('/perform', async (req, res) => {
     }
     
     // Determine which model to use based on deepRehearsal flag
-    const modelName = deepRehearsal ? 'gemini-3.0-pro' : 'gemini-3.0-flash';
+    const modelName = deepRehearsal ? 'gemini-pro-latest' : 'gemini-flash-latest';
     
     // personaKey should be the full persona description
     const script = await rewriteTextAsMethodActor(text, personaKey, modelName);

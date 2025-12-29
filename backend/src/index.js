@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import geminiRoutes from './routes/gemini.js';
 import voiceRoutes from './routes/voice.js';
+import personaRoutes from './routes/personas.js';
 
 dotenv.config();
 
@@ -20,6 +21,7 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/gemini', geminiRoutes);
 app.use('/api/voice', voiceRoutes);
+app.use('/api/personas', personaRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

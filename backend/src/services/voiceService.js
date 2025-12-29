@@ -5,7 +5,7 @@ export const textToSpeech = async (text, voiceId = 'default') => {
     const elevenlabs = getElevenLabsClient();
     const audio = await elevenlabs.textToSpeech.convert(voiceId, {
       text,
-      model_id: 'eleven_monolingual_v1',
+      model_id: 'eleven_flash_v2_5',
     });
     
     return audio;

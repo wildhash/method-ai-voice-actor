@@ -7,7 +7,7 @@ import { getVertexAIModel } from '../config/gemini.js';
  * @param {string} modelName - Optional model name (default: gemini-3.0-flash)
  * @returns {Promise<string>} The rewritten text in character
  */
-export const rewriteTextAsMethodActor = async (text, persona, modelName = 'gemini-3.0-flash') => {
+export const rewriteTextAsMethodActor = async (text, persona, modelName = 'gemini-flash-latest') => {
   try {
     const model = getVertexAIModel(modelName);
     
@@ -44,7 +44,7 @@ Rules:
 // Legacy function for backward compatibility
 export const rewriteText = async (text, characterPrompt) => {
   try {
-    const model = getVertexAIModel('gemini-3.0-flash');
+    const model = getVertexAIModel('gemini-flash-latest');
     const prompt = `${characterPrompt}\n\nRewrite the following text in character:\n${text}`;
     
     const result = await model.generateContent(prompt);
@@ -58,7 +58,7 @@ export const rewriteText = async (text, characterPrompt) => {
 
 export const generateCharacterDialogue = async (scenario, characterName, characterTraits) => {
   try {
-    const model = getVertexAIModel('gemini-3.0-flash');
+    const model = getVertexAIModel('gemini-flash-latest');
     const prompt = `You are ${characterName}, a character with these traits: ${characterTraits}.
     
 Given this scenario: ${scenario}

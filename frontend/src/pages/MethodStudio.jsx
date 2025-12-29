@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { PERSONAS, getPersonasArray } from '../personas';
 import api from '../services/api';
+import { getAllPersonas } from '../services/personaService';
+import PersonaManager from './PersonaManager';
 import './MethodStudio.css';
 
 function MethodStudio() {
@@ -11,9 +13,33 @@ function MethodStudio() {
   const [deepRehearsal, setDeepRehearsal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null);
+  const [showPersonaManager, setShowPersonaManager] = useState(false);
+  const [allPersonas, setAllPersonas] = useState(PERSONAS);
 
   const personas = getPersonasArray();
-  const currentPersona = PERSONAS[selectedPersona];
+  const currentPersona = allPersonas[selectedPersona] || PERSONAS[selectedPersona];
+
+  // Load all personas (default + custom) on mount
+  useEffect(() => {
+    loadAllPersonas();
+  }, []);
+
+  const loadAllPersonas = async () => {
+    try {
+      const fetchedPersonas = await getAllPersonas();
+      // Ensure we have a valid object, not an array or null
+      if (fetchedPersonas && typeof fetchedPersonas === 'object' && !Array.isArray(fetchedPersonas)) {
+        setAllPersonas(fetchedPersonas);
+      } else {
+        console.warn('Invalid personas format received, using defaults');
+        setAllPersonas(PERSONAS);
+      }
+    } catch (error) {
+      console.error('Failed to load personas:', error);
+      // Fall back to default personas
+      setAllPersonas(PERSONAS);
+    }
+  };
 
   // Cleanup audio URL on unmount or when new audio is generated
   useEffect(() => {
@@ -26,7 +52,7 @@ function MethodStudio() {
 
   // The REHEARSE button handler
   const handleRehearsal = async () => {
-    if (!inputText || !selectedPersona) return;
+    if (!inputText || !selectedPersona || !currentPersona) return;
 
     setLoading(true);
     setScript('');
@@ -55,6 +81,11 @@ function MethodStudio() {
 
   // Synthesize speech using ElevenLabs
   const synthesizeSpeech = async (text) => {
+    if (!currentPersona || !currentPersona.elevenLabsVoiceId) {
+      console.error('Cannot synthesize speech: persona or voice ID missing');
+      return;
+    }
+
     try {
       // Revoke previous audio URL to prevent memory leaks
       if (audioUrl) {
@@ -115,18 +146,25 @@ function MethodStudio() {
                   onChange={(e) => setSelectedPersona(e.target.value)}
                   className="persona-dropdown"
                 >
-                  {personas.map((persona) => (
-                    <option key={persona.key} value={persona.key}>
-                      {persona.label}
+                  {allPersonas && typeof allPersonas === 'object' && Object.entries(allPersonas).map(([key, persona]) => (
+                    <option key={key} value={key}>
+                      {persona?.label || key} {persona?.isCustom ? '⭐' : ''}
                     </option>
                   ))}
                 </select>
+                <button 
+                  className="btn-manage-cast"
+                  onClick={() => setShowPersonaManager(true)}
+                  title="Manage personas"
+                >
+                  🎭 Manage Cast
+                </button>
               </div>
 
               <div className="persona-info">
                 <h3>Character Description:</h3>
                 <p className="persona-description">
-                  {currentPersona.systemPrompt}
+                  {currentPersona?.systemPrompt || 'Select a persona'}
                 </p>
               </div>
 
@@ -195,6 +233,28 @@ function MethodStudio() {
             </div>
           </div>
         </div>
+
+        {/* Persona Manager Modal */}
+        {showPersonaManager && (
+          <PersonaManager
+            personas={allPersonas}
+            onPersonaCreated={(newPersona) => {
+              // Reload all personas to get the updated list
+              loadAllPersonas();
+              // Optionally select the new persona
+              setSelectedPersona(newPersona.id);
+            }}
+            onPersonaDeleted={(deletedId) => {
+              // Reload all personas
+              loadAllPersonas();
+              // If the deleted persona was selected, switch to a default
+              if (selectedPersona === deletedId) {
+                setSelectedPersona('noir_detective');
+              }
+            }}
+            onClose={() => setShowPersonaManager(false)}
+          />
+        )}
       </div>
     </div>
   );

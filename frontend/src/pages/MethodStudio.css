@@ -132,11 +132,32 @@
   background: white;
   cursor: pointer;
   transition: border-color 0.3s ease;
+  margin-bottom: 0.75rem;
 }
 
 .persona-dropdown:focus {
   outline: none;
   border-color: #ffa726;
+}
+
+.btn-manage-cast {
+  width: 100%;
+  padding: 0.75rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn-manage-cast:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
 }
 
 .persona-info {

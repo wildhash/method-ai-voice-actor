@@ -23,9 +23,18 @@ function Studio() {
   const loadVoices = async () => {
     try {
       const data = await getVoices();
-      setVoices(data.voices || []);
-      if (data.voices && data.voices.length > 0) {
-        setSelectedVoice(data.voices[0].voice_id);
+      // Handle different response structures
+      let voicesList = [];
+      if (data.voices && Array.isArray(data.voices)) {
+        voicesList = data.voices;
+      } else if (Array.isArray(data)) {
+        voicesList = data;
+      }
+      
+      setVoices(voicesList);
+      
+      if (voicesList.length > 0) {
+        setSelectedVoice(voicesList[0].voice_id);
       }
     } catch (error) {
       console.error('Failed to load voices:', error);
